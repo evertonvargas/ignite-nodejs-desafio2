@@ -2,93 +2,170 @@ import { FastifyInstance } from 'fastify'
 import { randomUUID } from 'node:crypto'
 import { idSchema, mealsBodySchema } from '../schema/mealsSchema'
 import { checkSessionIdExist } from '../middlewares/check-session-id-exists'
+import { knex } from '../database'
 
-interface DatabaseProps {
-  id: string
-  name: string
-  description: string
-  date: string
-  time: string
-  isDiet: boolean
-  session_id: string
-}
-
-const DATABASE: DatabaseProps[] = []
+type MealsPerDate = { [date: string]: number }
 
 export async function mealsRoutes(app: FastifyInstance) {
-  app.addHook('preHandler', checkSessionIdExist)
+  app.get(
+    '/',
+    {
+      preHandler: [checkSessionIdExist],
+    },
+    async (request) => {
+      const { sessionId } = request.cookies
+      const meals = await knex('meals')
+        .where('session_id', sessionId)
+        .select('*')
+      return {
+        meals,
+      }
+    },
+  )
 
-  app.get('/', async () => {
-    return {
-      meals: DATABASE,
-    }
-  })
+  app.get(
+    '/:id',
+    {
+      preHandler: [checkSessionIdExist],
+    },
+    async (request, reply) => {
+      const { id } = idSchema.parse(request.params)
+      const { sessionId } = request.cookies
 
-  app.get('/:id', async (request, reply) => {
-    const { id } = idSchema.parse(request.params)
+      const meal = await knex('meals')
+        .where({
+          session_id: sessionId,
+          id,
+        })
+        .first()
 
-    const index = DATABASE.findIndex((meal) => meal.id === id)
+      return { meal }
+    },
+  )
 
-    if (index !== -1) {
-      return reply.send({
-        meal: DATABASE[index],
+  app.get(
+    '/summary',
+    {
+      preHandler: [checkSessionIdExist],
+    },
+    async (request, reply) => {
+      const { sessionId } = request.cookies
+
+      const meals = await knex('meals')
+        .where({
+          session_id: sessionId,
+        })
+        .orderBy([
+          { column: 'date', order: 'desc' },
+          { column: 'time', order: 'desc' },
+        ])
+      const mealsIsDiet = meals.filter((meal) => Boolean(meal.isDiet) === true)
+
+      const mealsPerDate: MealsPerDate = mealsIsDiet.reduce(
+        (acc: MealsPerDate, meal) => {
+          const date = meal.date
+          if (acc[date]) {
+            acc[date]++
+          } else {
+            acc[date] = 1
+          }
+          return acc
+        },
+        {},
+      )
+
+      const bestSequence = Object.entries(mealsPerDate).reduce((max, curr) => {
+        if (curr[1] > max[1]) {
+          return curr
+        } else {
+          return max
+        }
       })
-    }
 
-    return reply.status(404).send()
-  })
+      if (meals.length > 0) {
+        return reply.send({
+          summary: {
+            totalMeals: meals.length,
+            totalMealsIsDiet: mealsIsDiet.length,
+            totalOffDietMeals: meals.length - mealsIsDiet.length,
+            bestSequence: {
+              date: bestSequence[0],
+              total: bestSequence[1],
+            },
+          },
+        })
+      }
 
-  app.get('/summary', (request, reply) => {
-    const { sessionId } = request.cookies
-    const meals = DATABASE.filter((meal) => meal.session_id === sessionId)
-    const idDiet = meals.filter((meal) => meal.isDiet === true)
-
-    if (meals.length > 0) {
-      return reply.send({
-        totalMeals: meals.length,
-        totalMealsIsDiet: idDiet.length,
-        totalOffDietMeals: meals.length - idDiet.length,
-      })
-    }
-
-    return reply.status(404).send()
-  })
+      return reply.status(404).send()
+    },
+  )
 
   app.post('/', async (request, reply) => {
     const body = mealsBodySchema.parse(request.body)
-    const sessionId = request.cookies.sessionId as string
+    let sessionId = request.cookies.sessionId
 
-    DATABASE.push({
-      id: randomUUID(),
-      ...body,
-      session_id: sessionId,
-    })
+    if (!sessionId) {
+      sessionId = randomUUID()
+
+      reply.cookie('sessionId', sessionId, {
+        path: '/',
+        maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+      })
+    }
+
+    await knex('meals')
+      .insert({
+        id: randomUUID(),
+        ...body,
+        session_id: sessionId,
+      })
+      .returning('*')
 
     return reply.status(201).send()
   })
 
-  app.put('/:id', async (request, reply) => {
-    const body = mealsBodySchema.parse(request.body)
-    const { id } = idSchema.parse(request.params)
+  app.put(
+    '/:id',
+    {
+      preHandler: [checkSessionIdExist],
+    },
+    async (request, reply) => {
+      const body = mealsBodySchema.parse(request.body)
+      const { id } = idSchema.parse(request.params)
+      const { sessionId } = request.cookies
 
-    const index = DATABASE.findIndex((meal) => meal.id === id)
+      await knex('meals')
+        .where({
+          session_id: sessionId,
+          id,
+        })
+        .update({
+          id,
+          session_id: sessionId,
+          ...body,
+        })
 
-    if (index !== -1) {
-      DATABASE[index] = { ...DATABASE[index], id, ...body }
-    }
+      return reply.status(204).send()
+    },
+  )
 
-    return reply.status(204).send()
-  })
+  app.delete(
+    '/:id',
+    {
+      preHandler: [checkSessionIdExist],
+    },
+    async (request, reply) => {
+      const { id } = idSchema.parse(request.params)
+      const { sessionId } = request.cookies
 
-  app.delete('/:id', async (request, reply) => {
-    const { id } = idSchema.parse(request.params)
+      await knex('meals')
+        .where({
+          session_id: sessionId,
+          id,
+        })
+        .del()
 
-    const indexToDelete = DATABASE.findIndex((meal) => meal.id === id)
-
-    if (indexToDelete !== -1) {
-      DATABASE.splice(indexToDelete, 1)
-    }
-
-    return reply.status(204).send()
-  })
+      return reply.status(204).send()
+    },
+  )
 }
