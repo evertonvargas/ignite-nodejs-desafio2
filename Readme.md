@@ -1,4 +1,4 @@
-# Desafio 2 - REST API
+# Desafio 2 NodeJS - REST API
 
 <p align="center">
   <img src="https://img.shields.io/static/v1?label=api&message=rest&color=blueviolet&style=for-the-badge"/>
@@ -28,3 +28,12 @@
     - Quantidade total de refeições fora da dieta
     - Melhor sequência por dia de refeições dentro da dieta
 - O usuário só pode visualizar, editar e apagar as refeições o qual ele criou
+
+## 🔗 Rotas
+
+- POST `/meals` → cria uma refeição
+- GET `/meals/:id` → pesquisa uma refeição especifíca pelo `id`
+- GET `/meals` → lista todas as refeições já criadas
+- GET `/meals/summary` → recupera as métricas do usuário 
+- PUT  `/meals/:id` → atualiza a refeição pelo `id`
+- DELETE `/meals/:id` → deleta uma refeição pelo `id`
