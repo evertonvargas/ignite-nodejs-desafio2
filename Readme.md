@@ -40,6 +40,8 @@
 
 As requisições para testar a API estão disponíveis no botão abaixo e o link para acessar a API no ar está na descrição do repositório:
 
+[![Run in Insomnia}](https://insomnia.rest/images/run.svg)](https://insomnia.rest/run/?label=Ignite%20Desafio%202&uri=https%3A%2F%2Fgithub.com%2Fevertonvargas%2Fignite-nodejs-desafio2%2Fblob%2Fmain%2F.github%2Finsomnia.json)
+
 ## Instalação
 
 Antes de começar, você vai precisar ter instalado em sua máquina as seguintes ferramentas:
